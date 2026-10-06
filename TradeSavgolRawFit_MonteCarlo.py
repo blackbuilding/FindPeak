@@ -14,6 +14,11 @@
 # (%) vs. calendar time on one chart, with the single highest-return run
 # highlighted.
 #
+# Stocks are long-only here (no shorting individual names); currency pairs
+# trade both directions, since going short one currency is just going long
+# the other side of the pair. Signals on the disallowed side are dropped
+# before simulation, so e.g. a stock's SHORT pivots never become trades.
+#
 # TradeSavgol.py and TradeSavgolRawFit.py are both left unmodified.
 
 import os
@@ -33,23 +38,37 @@ from TradeSavgolRawFit import find_entry_signals_rawfit
 DATE_FROM = datetime(2020, 1, 1)
 DATE_TO = datetime(2026, 1, 1)
 
+# (symbol, asset class, display note) - asset class decides which trade
+# sides are allowed (see ALLOWED_SIDES below); the note is just for the
+# asset grid / labeling and doesn't affect behavior.
 ASSETS = [
-    ("AAPL", "stock"),
-    ("MSFT", "stock"),
-    ("GOOGL", "stock"),
-    ("EURUSD", "currency"),
-    ("GBPUSD", "currency"),
-    ("USDJPY", "currency"),
-    ("TSLA", "highly volatile"),
+    ("AAPL", "stock", "stock"),
+    ("MSFT", "stock", "stock"),
+    ("GOOGL", "stock", "stock"),
+    ("EURUSD", "currency", "currency"),
+    ("GBPUSD", "currency", "currency"),
+    ("USDJPY", "currency", "currency"),
+    ("TSLA", "stock", "highly volatile"),
 ]
 TIMEFRAMES = [("D1", mt5.TIMEFRAME_D1), ("H1", mt5.TIMEFRAME_H1)]
+
+ALLOWED_SIDES = {
+    "stock": ("LONG",),
+    "currency": ("LONG", "SHORT"),
+}
 
 OUTPUT_DIR = "monte_carlo_output"
 
 
-def run_combo(symbol: str, tf_label: str, tf_const: int, output_dir: str) -> dict | None:
+def filter_entries_by_side(entries, allowed_sides: tuple):
+    if entries.empty:
+        return entries
+    return entries[entries["side"].isin(allowed_sides)].reset_index(drop=True)
+
+
+def run_combo(symbol: str, asset_class: str, tf_label: str, tf_const: int, output_dir: str) -> dict | None:
     label = f"{symbol} {tf_label}"
-    print(f"--- {label} ---")
+    print(f"--- {label} ({asset_class}, {'/'.join(ALLOWED_SIDES[asset_class])} only) ---")
 
     try:
         data = get_asset_data(symbol, tf_const, DATE_FROM, DATE_TO)
@@ -62,6 +81,7 @@ def run_combo(symbol: str, tf_label: str, tf_const: int, output_dir: str) -> dic
     data = add_savgol(data, column=MA_COL, out_col=SAVGOL_MA10_COL)
 
     entries = find_entry_signals_rawfit(data)
+    entries = filter_entries_by_side(entries, ALLOWED_SIDES[asset_class])
     trades = simulate_trades(data, entries)
 
     print_ma10_long_short_table(entries)
@@ -112,15 +132,15 @@ def plot_monte_carlo_overlay(runs: list, out_path: str, title_suffix: str) -> No
             alpha=1.0 if is_best else 0.8,
         )
 
-    # If one run's return dwarfs the rest (e.g. an outlier like TSLA H1 at
-    # +9,054,904% vs. the next-highest H1 run at +10,444%), a linear axis
-    # flattens every other line to ~0. Auto-detect that case and switch to a
-    # symlog axis so every run stays visible; leave well-behaved groups (like
-    # D1 here) on a normal linear axis.
-    abs_returns = [abs(r["net_profit_pct"]) for r in runs if r["net_profit_pct"] == r["net_profit_pct"]]
-    others_max = max((v for v in abs_returns if v != abs(best["net_profit_pct"])), default=0)
-    if others_max > 0 and abs(best["net_profit_pct"]) / others_max > 20:
-        ax.set_yscale("symlog", linthresh=max(1.0, others_max))
+    # Compounded return under full reinvestment reliably produces multi-tier
+    # outliers here (e.g. GOOGL H1 +454,794,545% vs. TSLA H1 +49,342,087% vs.
+    # everything else in the thousands) - a single "is the top run >Nx the
+    # next one" check misses cases where the 2nd-place run is ALSO an outlier
+    # relative to the rest. Always use a symlog axis instead of trying to
+    # detect the outlier pattern: below linthresh it reads as a normal linear
+    # plot (so well-behaved groups like D1 aren't hurt), and above it every
+    # run stays visible regardless of how many outlier tiers there are.
+    ax.set_yscale("symlog", linthresh=50.0)
 
     ax.axhline(0, color="gray", linestyle="--", linewidth=0.8)
     ax.set_xlabel("Date")
@@ -140,9 +160,9 @@ if __name__ == "__main__":
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     runs = []
-    for symbol, _category in ASSETS:
+    for symbol, asset_class, _note in ASSETS:
         for tf_label, tf_const in TIMEFRAMES:
-            result = run_combo(symbol, tf_label, tf_const, OUTPUT_DIR)
+            result = run_combo(symbol, asset_class, tf_label, tf_const, OUTPUT_DIR)
             if result is not None:
                 runs.append(result)
 
