@@ -1,0 +1,32 @@
+Create a new mt5 indicator, Savgol_Peak_Valley. Using the following description. Plot "Buy", and "Sell" signals on price (default) with option to plot find_peak _valley signal  and Savgol signal. Peak and valley input is MA10 (changable input)
+
+Add the following comments into Savgo_Peak_Valley.
+
+# The concept of find_peaks and valleys is based on the idea that local maxima (peaks) and minima (valleys)
+# in a time series can indicate potential turning points or areas of interest for analysis. By identifying 
+# these points, one can gain insights into the behavior of the data and make informed decisions based on the observed patterns.  
+
+# Whenever a peak is detected by both find_peaks and the Savitzky-Golay filter to be within 
+# a certain proximity (3 frames, should be input), it suggests that the peak is a significant feature of 
+# the data, as it is confirmed by two different methods. This can increase confidence in the validity of the detected peak and 
+# its potential relevance for further analysis or decision-making. It suggests that the peak is a significant feature of the data, as it is 
+# confirmed by two different methods. This can increase confidence in the validity of the detected peak and its potential 
+# relevance for further analysis or decision-making.
+
+# Opposite logic applies for valleys, where a valley detected by both methods within the specified proximity 
+# indicates a significant local minimum in the data.
+
+# Long/short signals are generated based on the confluence of peaks and valleys detected by both methods.
+# Order are executed with a 2-frame delay after the later of the two pivots, and exit conditions are 
+# based on stop loss, take profit, or opposite signals.
+
+
+Modify Savgol_EA to have a selection logic of how long entry/exit and short entry/exit, is made.
+
+1. Use both Peak or valley detections of both find_peak (MA10) and Savpol. Whenever both signals show peak detection within x bars. Then it is a short signal. If both signals show valley, then it is a long signal. This currently done. Make no change to current logic.
+
+2. Action is taken base on find_peak (MA10) crossing Savpol.  
+
+Whenever Savpol signal cross over find_peak signal. It signifies a long entry opportunity. If no long opening ticket for this asset, then long entry should be made. If there a short ticket opened for this asset, close it before enter a long ticket. This entry should not have stop loss or take proft, for now. 
+
+Code should monitor for the Savpol signal to cross below find_peak. If there is an open long ticket for this asset, then close it and open a short ticket for this asset. Otherwise (no short ticket opened for this asset). Enter a short position.

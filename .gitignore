@@ -1,0 +1,7 @@
+# Python virtual environment (large, machine-specific)
+.env/
+__pycache__/
+*.pyc
+
+# Local credential helper - contains the real MT5 password, never commit it
+set_mt5_env.ps1
